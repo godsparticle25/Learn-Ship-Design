@@ -1,0 +1,92 @@
+#python code for eedi
+import json
+import os
+
+# === File to store all ship data ===
+DATA_FILE = "EEDI2.json"
+
+# === Load existing data if file exists, otherwise create new ===
+if os.path.exists(DATA_FILE):
+    with open(DATA_FILE, "r") as f:
+        data = json.load(f)
+else:
+    data = {"ships": {}}
+
+# === Fuel correction factor dictionary ===
+CF_dict = {"HFO": 3.114, "MDO": 3.206, "LNG": 2.750}
+
+# === Ask for ship name ===
+ship_name = input("Enter the ship name: ").strip()
+
+# === Check if this name exists in any record ===
+matching_ships = {sid: info for sid, info in data["ships"].items() if info["ship_name"].lower() == ship_name.lower()}
+
+if matching_ships:
+    print(f"\n Ship name '{ship_name}' found in database.")
+    print("Matching ships:")
+    for sid, info in matching_ships.items():
+        eedi_val = info.get("eedi", "Not calculated")
+        print(f"  - ID: {sid}, Type: {info['ship_type']}, Fuel: {info['fuel_type']}, EEDI: {eedi_val}")
+    
+    # Ask for specific ID if multiple
+    if len(matching_ships) > 1:
+        ship_id = input("\nEnter the unique ship ID to access or update: ").strip()
+        ship_data = matching_ships.get(ship_id)
+        if not ship_data:
+            print(f"No record found with name '{ship_name}' and ID '{ship_id}'. Creating a new one.")
+            ship_id = input("Enter a unique ship ID: ").strip()
+            ship_data = {}
+    else:
+        ship_id, ship_data = next(iter(matching_ships.items()))
+    
+    # Show existing details
+    if ship_data:
+        print(f"\n Found exact match for {ship_name} (ID: {ship_id})")
+        print("Stored details:")
+        for k, v in ship_data.items():
+            if k != "ship_name":
+                print(f"  {k}: {v}")
+
+        choice = input("\nDo you want to update or recalculate EEDI? (y/n): ").lower()
+        if choice != "y":
+            print("\nNo changes made. Exiting program.")
+            exit()
+else:
+    print(f"\n No ship named '{ship_name}' found. Let's create a new record.")
+    ship_id = input("Enter a unique ship ID (IMO or serial number): ").strip()
+    ship_data = {}
+
+# === Collect ship data ===
+ship_data["ship_name"] = ship_name
+ship_data["ship_type"] = input("Enter ship type: ")
+fueltype = input("Enter fuel type (HFO/MDO/LNG): ").strip().upper()
+ship_data["fuel_type"] = fueltype
+ship_data["main_engine_power"] = float(input("Enter main engine power (kW): "))
+ship_data["aux_engine_power"] = float(input("Enter auxiliary engine power (kW): "))
+ship_data["sfcme"] = float(input("Enter specific fuel consumption of main engine (g/kWh): "))
+ship_data["sfcae"] = float(input("Enter specific fuel consumption of auxiliary engine (g/kWh): "))
+ship_data["capacity"] = float(input("Enter capacity (DWT or GT): "))
+ship_data["speed"] = float(input("Enter reference speed (knots): "))
+
+# === Fuel correction factor ===
+if fueltype in CF_dict:
+    CF = CF_dict[fueltype]
+    print(f"Using CF for {fueltype}: {CF}")
+else:
+    CF = float(input(f"Fuel type '{fueltype}' not predefined. Enter custom CF value: "))
+ship_data["cf"] = CF
+
+# === EEDI Calculation ===
+EEDI = ((ship_data["main_engine_power"] * ship_data["sfcme"] +
+         ship_data["aux_engine_power"] * ship_data["sfcae"]) * CF) / \
+       (ship_data["capacity"] * ship_data["speed"])
+
+ship_data["eedi"] = EEDI
+print(f"\n Calculated EEDI for '{ship_name}' (ID: {ship_id}): {EEDI:.4f}")
+
+# === Save to JSON ===
+data["ships"][ship_id] = ship_data
+with open(DATA_FILE, "w") as f:
+    json.dump(data, f, indent=4)
+
+print("\n All data saved to EEDI.json")
